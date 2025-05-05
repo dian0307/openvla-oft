@@ -58,12 +58,13 @@ def _ls_new_forward(self, x: torch.Tensor) -> torch.Tensor:
 
 
 def ls_apply_patch(ls_module: LayerScale):
-    ls_module.scale_factor = nn.Parameter(ls_module.gamma.clone())
-    ls_module.forward = _ls_new_forward.__get__(ls_module, LayerScale)
-    del ls_module.gamma
+    ls_module.scale_factor = nn.Parameter(ls_module.gamma.clone())      # 重命名 LayerScale 模块中的 gamma 参数为 scale_factor
+    ls_module.forward = _ls_new_forward.__get__(ls_module, LayerScale)  # 修改该模块的前向传播(forward)方法
+    del ls_module.gamma                                                 # 删除原来的 gamma 参数
 
 
 # === Prismatic Vision Backbone (nn.Module) Definitions (w/ Fused Backbone Support) ===
+# backbone 用于视觉特征提取
 class PrismaticVisionBackbone(nn.Module):
     """
     Vision backbone for Prismatic models that handles image feature extraction.
@@ -112,6 +113,7 @@ class PrismaticVisionBackbone(nn.Module):
         # Patch LayerScale modules for HF compatibility
         self._patch_layer_scales()
 
+    # 创建视觉编码器并返回第二层特征
     def _create_featurizer(self, model_id: str, img_size: int, act_layer: Optional[str]) -> nn.Module:
         """
         Create a TIMM-based featurizer model with appropriate configurations.
@@ -198,7 +200,7 @@ class PrismaticVisionBackbone(nn.Module):
                 return self.featurizer(pixel_values)
 
             # Split `pixel_values :: [bsz, 2 * 3, resolution, resolution]` =>> featurize =>> channel stack
-            img, img_fused = torch.split(pixel_values, [3, 3], dim=1)
+            img, img_fused = torch.split(pixel_values, [3, 3], dim=1)       # 不是6通道直接报错了
             patches, patches_fused = self.featurizer(img), self.fused_featurizer(img_fused)
 
             return torch.cat([patches, patches_fused], dim=2)
@@ -228,6 +230,7 @@ class PrismaticVisionBackbone(nn.Module):
 
 
 # === Prismatic Projector (nn.Module) Definitions ===
+# 用于视觉向语言投影
 class PrismaticProjector(nn.Module):
     def __init__(self, use_fused_vision_backbone: bool, vision_dim: int, llm_dim: int) -> None:
         super().__init__()
@@ -263,18 +266,19 @@ class PrismaticProjector(nn.Module):
 
 
 # === Main HF Class Definitions ===
+# 专门为视觉语言模型设计的输出容器类
 @dataclass
 class PrismaticCausalLMOutputWithPast(ModelOutput):
     """Base class for Prismatic casual (visually-conditioned) language model outputs; also exposes visual features."""
 
-    loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
-    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
-    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    loss: Optional[torch.FloatTensor] = None        # 计算得到的 loss
+    logits: torch.FloatTensor = None                # 模型输出的原始预测值
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None   #  用于序列生成的缓存键值对
+    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None       # 各层的隐藏状态
+    attentions: Optional[Tuple[torch.FloatTensor]] = None               # 注意力权重
 
     # Additions for VLMs
-    projector_features: Optional[torch.FloatTensor] = None
+    projector_features: Optional[torch.FloatTensor] = None              # 视觉投影器输出的特征
 
 
 class PrismaticPreTrainedModel(PreTrainedModel):
